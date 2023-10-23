@@ -1,6 +1,7 @@
 export LD_LIBRARY_PATH=
 export CUDA_VISIBLE_DEVICES=
 
+# Wizy is my nickname, you can call me Mandy or Wizy
 # specially for UASPEECH corpus
 # please ensure that you downloaded the latest version of uaspeech dataset
 
@@ -264,6 +265,77 @@ fi
 # print results:
 # grep WER $dnndir/decode_*/scoring_kaldi/best_wer
 
+# ================================================================================
+# TDNN setting without I-vector
 
-# all done...
+# nnet3 config
+gmmdir=$exp_dir/$trset/tri3
+tdnndir=$exp_dir/$trset/tdnn
+tdnn_dim=512
+if [ $stage -le 10 ]; then
+  echo "$0: creating neural net configs using the xconfig parser";
+
+  num_targets=$(tree-info $gmmdir/tree |grep num-pdfs|awk '{print $2}')
+
+  mkdir -p $tdnndir/configs
+  cat <<EOF > $tdnndir/configs/network.xconfig
+  input dim=40 name=input
+
+  # the first splicing is moved before the lda layer, so no splicing here
+  relu-renorm-layer name=tdnn1 dim=$tdnn_dim input=Append(-2,-1,0,1,2)
+  relu-renorm-layer name=tdnn2 dim=$tdnn_dim input=Append(-1,0,1)
+  relu-renorm-layer name=tdnn3 dim=$tdnn_dim
+  relu-renorm-layer name=tdnn4 dim=$tdnn_dim input=Append(-1,0,1)
+  relu-renorm-layer name=tdnn5 dim=$tdnn_dim
+  relu-renorm-layer name=tdnn6 dim=$tdnn_dim input=Append(-3,0,3)
+  relu-renorm-layer name=tdnn7 dim=$tdnn_dim input=Append(-6,-3,0)
+  output-layer name=output dim=$num_targets max-change=1.5
+EOF
+  steps/nnet3/xconfig_to_configs.py --xconfig-file $tdnndir/configs/network.xconfig --config-dir $tdnndir/configs/
+fi
+
+# tdnn training
+train_ivector_dir=
+remove_egs=true
+common_egs_dir=
+reporting_email=
+ali_dir=${gmmdir}_ali_${trset}_sp
+if [ $stage -le 11 ]; then
+  # I think we need to fine-tune the parameters for TDNN!!!
+  tdnn_finaljob=4
+  steps/nnet3/train_dnn.py --stage=-10 \
+    --cmd="$decode_cmd" \
+    --feat.online-ivector-dir="$train_ivector_dir" \
+    --feat.cmvn-opts="--norm-means=false --norm-vars=false" \
+    --trainer.srand=0 \
+    --trainer.max-param-change=2.0 \
+    --trainer.num-epochs=3 \
+    --trainer.samples-per-iter=400000 \
+    --trainer.optimization.num-jobs-initial=2 \
+    --trainer.optimization.num-jobs-final=$tdnn_finaljob \
+    --trainer.optimization.initial-effective-lrate=0.0015 \
+    --trainer.optimization.final-effective-lrate=0.00015 \
+    --trainer.optimization.minibatch-size=256,128 \
+    --egs.dir="$common_egs_dir" \
+    --cleanup.remove-egs=$remove_egs \
+    --use-gpu=true \
+    --reporting.email="$reporting_email" \
+    --feat-dir=$data_dir/${trset}_sp_hires \
+    --ali-dir=$ali_dir \
+    --lang=$lang \
+    --dir=$tdnndir  || exit 1;
+fi
+
+# decode
+test_ivector_dir=
+if [ $stage -le 12 ]; then
+  for dset in $etset; do
+    if [ ! -f ${tdnndir}/decode_${dset}/scoring_kaldi/best_wer ]; then
+     steps/nnet3/decode.sh --nj $decode_nj --cmd "$decode_cmd"  --num-threads $thread_nj \
+    	--online-ivector-dir "$test_ivector_dir" \
+	--scoring-opts "$scoring_opts" --stage 0 \
+  	$gmmdir/graph $data_dir/${dset}_hires ${tdnndir}/decode_${dset} || exit 1;
+    fi
+  done
+fi
 
