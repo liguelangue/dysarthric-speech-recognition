@@ -1,15 +1,8 @@
-#!/bin/bash
 export LD_LIBRARY_PATH=
 export CUDA_VISIBLE_DEVICES=
 
-# Feifei Xiong (f.xiong@sheffield.ac.uk) @ 2018, SPandH, University of Sheffield
-# please contact (Feifei Xiong, Jon Barker, Heidi Christensen)
-
 # specially for UASPEECH corpus
 # please ensure that you downloaded the latest version of uaspeech dataset
-
-# qsub -V -l h_rt=08:00:00 -o qsub_ctl -e qsub_ctl -j y ./run.sh --trainset "ctl" --nj 2 --decode-nj 2 --stage 0
-# qsub -V -l h_rt=08:00:00 -o qsub_dys -e qsub_dys -j y ./run.sh --trainset "dys" --nj 2 --decode-nj 2 --stage 3
 
 # Begin configuration section.
 nj=2  # probably max 13 for ctl and max 15 for dys due to limited speakers
